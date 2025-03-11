@@ -81,6 +81,16 @@ public class ChunkMeshGenerator : MonoBehaviour
         BlockType blockType = blocks[x, y, z];
         BlockData.FaceTextures textures = BlockData.GetTextureData(blockType);
         
+        // Face inférieure
+        if (y - 1 < 0 || BlockData.IsTransparent(blocks[x, y - 1, z]))
+        {
+            AddFace(new Vector3(x, y, z+1),             // Point de départ
+                    new Vector3(1, 0, 0), // Direction horizontale
+                    new Vector3(0, 0, -1),            // Direction verticale
+                    vertices, triangles, uvs,
+                    GetTextureUVs(textures.down, atlasSize));
+        }
+
         // Face supérieure
         if (y + 1 >= sizeY || BlockData.IsTransparent(blocks[x, y + 1, z]))
         {
@@ -91,21 +101,11 @@ public class ChunkMeshGenerator : MonoBehaviour
                     GetTextureUVs(textures.up, atlasSize));
         }
 
-        // Face inférieure
-        if (y - 1 < 0 || BlockData.IsTransparent(blocks[x, y - 1, z]))
-        {
-            AddFace(new Vector3(x, y, z),             // Point de départ
-                    new Vector3(1, 0, 0),             // Direction horizontale
-                    new Vector3(0, 0, -1),            // Direction verticale
-                    vertices, triangles, uvs,
-                    GetTextureUVs(textures.down, atlasSize));
-        }
-
         // Face avant (Z+)
         if (z + 1 >= sizeZ || BlockData.IsTransparent(blocks[x, y, z + 1]))
         {
-            AddFace(new Vector3(x, y, z + 1),         // Point de départ
-                    new Vector3(1, 0, 0),             // Direction horizontale
+            AddFace(new Vector3(x+1, y, z + 1),         // Point de départ
+                    new Vector3(-1, 0, 0),             // Direction horizontale
                     new Vector3(0, 1, 0),             // Direction verticale
                     vertices, triangles, uvs,
                     GetTextureUVs(textures.front, atlasSize));
@@ -114,8 +114,8 @@ public class ChunkMeshGenerator : MonoBehaviour
         // Face arrière (Z-)
         if (z - 1 < 0 || BlockData.IsTransparent(blocks[x, y, z - 1]))
         {
-            AddFace(new Vector3(x + 1, y, z),         // Point de départ
-                    new Vector3(-1, 0, 0),            // Direction horizontale
+            AddFace(new Vector3(x, y, z),         // Point de départ
+                    new Vector3(1, 0, 0),            // Direction horizontale
                     new Vector3(0, 1, 0),             // Direction verticale
                     vertices, triangles, uvs,
                     GetTextureUVs(textures.back, atlasSize));

@@ -525,7 +525,7 @@ public static class BlockData
             case BlockType.Gold:
                 return new FaceTextures(9);
             case BlockType.Wood:
-                return new FaceTextures(16, 17, 16); // Top, Side, Bottom
+                return new FaceTextures(17, 16, 17); // Top, Side, Bottom
             case BlockType.Leaves:
                 return new FaceTextures(18);
             default:

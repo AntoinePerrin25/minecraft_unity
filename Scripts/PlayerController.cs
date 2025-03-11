@@ -182,6 +182,9 @@ public class PlayerController : MonoBehaviour
                     if (blockHighlightScript != null)
                     {
                         blockHighlightScript.SetPosition(highlightPosition);
+                        
+                        // Pass the face normal to highlight the specific face
+                        blockHighlightScript.SetFaceNormal(hit.normal);
                     }
                 }
                 

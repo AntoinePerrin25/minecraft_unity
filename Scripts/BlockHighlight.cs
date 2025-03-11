@@ -1,57 +1,78 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class BlockHighlight : MonoBehaviour
 {
-    [Header("Visual Settings")]
+    [Header("Highlight Settings")]
     public Color highlightColor = new Color(1f, 1f, 1f, 0.3f);
     public float pulseSpeed = 1.5f;
-    public float minAlpha = 0.2f;
-    public float maxAlpha = 0.5f;
-    public bool enablePulse = true;
+    public float minOpacity = 0.2f;
+    public float maxOpacity = 0.4f;
 
-    private Renderer blockRenderer;
-    private Material highlightMaterial;
-    private float pulseTimer = 0f;
+    private Renderer highlightRenderer;
+    private MaterialPropertyBlock propertyBlock;
+    private Vector3 currentPosition;
+    private Vector3 faceNormal = Vector3.zero;
 
     void Awake()
     {
-        blockRenderer = GetComponent<Renderer>();
+        // Get the renderer component
+        highlightRenderer = GetComponent<Renderer>();
         
-        // Create a new material instance to avoid affecting other objects using the same material
-        if (blockRenderer != null && blockRenderer.material != null)
-        {
-            highlightMaterial = new Material(blockRenderer.material);
-            highlightMaterial.color = highlightColor;
-            blockRenderer.material = highlightMaterial;
-        }
+        // Initialize property block for efficient material property manipulation
+        propertyBlock = new MaterialPropertyBlock();
     }
 
     void Update()
     {
-        if (enablePulse && highlightMaterial != null)
-        {
-            // Pulse the alpha value of the highlight
-            pulseTimer += Time.deltaTime * pulseSpeed;
-            if (pulseTimer > Mathf.PI * 2)
-            {
-                pulseTimer -= Mathf.PI * 2;
-            }
-            
-            // Calculate alpha based on sine wave
-            float alphaValue = Mathf.Lerp(minAlpha, maxAlpha, (Mathf.Sin(pulseTimer) + 1) * 0.5f);
-            
-            // Apply the new alpha to the material
-            Color newColor = highlightMaterial.color;
-            newColor.a = alphaValue;
-            highlightMaterial.color = newColor;
-        }
+        // Create a pulsing effect by changing the alpha over time
+        float pulse = Mathf.Lerp(minOpacity, maxOpacity, (Mathf.Sin(Time.time * pulseSpeed) + 1f) / 2f);
+        
+        Color pulsingColor = highlightColor;
+        pulsingColor.a = pulse;
+        
+        // Update the material color with the pulsing effect
+        propertyBlock.SetColor("_BaseColor", pulsingColor);
+        highlightRenderer.SetPropertyBlock(propertyBlock);
     }
 
-    // Method to update the highlight position
     public void SetPosition(Vector3 position)
     {
+        currentPosition = position;
         transform.position = position;
+    }
+
+    public void SetFaceNormal(Vector3 normal)
+    {
+        // Store the normal of the face being looked at
+        faceNormal = normal;
+        
+        // If you want to highlight just the face, you could adjust scale and position here
+        // For example, for a specific face highlight (more advanced):
+        
+        // Reset scale to 1
+        transform.localScale = Vector3.one;
+        
+        // Adjust position based on which face is being highlighted
+        // This pushes the highlight slightly towards the face being looked at
+        transform.position = currentPosition + normal * 0.01f;
+        
+        // Scale down on the axis perpendicular to the face normal
+        if (Mathf.Abs(normal.x) > 0.5f)
+        {
+            // For X-facing faces, make the highlight flat on the X axis
+            transform.localScale = new Vector3(1.01f, 1.01f, 1.01f);
+        }
+        else if (Mathf.Abs(normal.y) > 0.5f)
+        {
+            // For Y-facing faces, make the highlight flat on the Y axis
+            transform.localScale = new Vector3(1.01f, 1.01f, 1.01f);
+
+        }
+        else if (Mathf.Abs(normal.z) > 0.5f)
+        {
+            // For Z-facing faces, make the highlight flat on the Z axis
+            transform.localScale = new Vector3(1.01f, 1.01f, 1.01f);
+
+        }
     }
 }

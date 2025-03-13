@@ -362,7 +362,7 @@ public class ChunkGenerator : MonoBehaviour
         return currentBlock;
     }
     
-    private Vector2Int GetChunkPosition(Vector3 position)
+    public Vector2Int GetChunkPosition(Vector3 position)
     {
         // Convert world position to chunk coordinates
         int chunkX = Mathf.FloorToInt(position.x / CHUNK_SIZE_X);
@@ -565,6 +565,9 @@ public class ChunkGenerator : MonoBehaviour
             }
         }
         
+        // Notify minimap
+        NotifyMinimapOfChunkChange(chunkPos);
+        
         yield return null;
     }
 
@@ -629,6 +632,9 @@ public class ChunkGenerator : MonoBehaviour
             }
         }
         
+        // Notify minimap
+        NotifyMinimapOfChunkChange(chunkPos);
+        
         yield return null;
     }
 
@@ -653,6 +659,108 @@ public class ChunkGenerator : MonoBehaviour
     private BlockType[,,] GenerateBlocks(Vector2Int chunkPos)
     {
         return GenerateBlocksThreadSafe(chunkPos);
+    }
+
+    // Add these methods to support the minimap
+    public bool IsChunkGenerated(Vector2Int chunkPos)
+    {
+        return chunks.ContainsKey(chunkPos);
+    }
+    
+    public BlockType GetTopBlockTypeAt(Vector2Int chunkPos)
+    {
+        if (!chunks.TryGetValue(chunkPos, out GameObject chunkObject))
+            return BlockType.Air;
+            
+        ChunkMeshGenerator meshGenerator = chunkObject.GetComponent<ChunkMeshGenerator>();
+        if (meshGenerator == null || !meshGenerator.TryGetBlockData(out BlockType[,,] blocks))
+            return BlockType.Air;
+            
+        // Get the dominant block type in the chunk (simplified approach)
+        Dictionary<BlockType, int> blockCounts = new Dictionary<BlockType, int>();
+        
+        for (int x = 0; x < CHUNK_SIZE_X; x++)
+        {
+            for (int z = 0; z < CHUNK_SIZE_Z; z++)
+            {
+                // Find the highest non-air block at this x,z position
+                for (int y = CHUNK_SIZE_Y - 1; y >= 0; y--)
+                {
+                    if (blocks[x, y, z] != BlockType.Air)
+                    {
+                        BlockType blockType = blocks[x, y, z];
+                        
+                        // Count this block type
+                        if (!blockCounts.ContainsKey(blockType))
+                            blockCounts[blockType] = 0;
+                            
+                        blockCounts[blockType]++;
+                        
+                        // Just look at the top block in each column
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Find the most common non-Air block type
+        BlockType mostCommon = BlockType.Air;
+        int maxCount = 0;
+        
+        foreach (var pair in blockCounts)
+        {
+            if (pair.Key != BlockType.Air && pair.Value > maxCount)
+            {
+                maxCount = pair.Value;
+                mostCommon = pair.Key;
+            }
+        }
+        
+        return mostCommon;
+    }
+
+    // Add this method to get top blocks for the minimap
+    public BlockType[,] GetTopBlocksInChunk(Vector2Int chunkPos)
+    {
+        if (!chunks.TryGetValue(chunkPos, out GameObject chunkObject))
+            return null;
+            
+        ChunkMeshGenerator meshGenerator = chunkObject.GetComponent<ChunkMeshGenerator>();
+        if (meshGenerator == null || !meshGenerator.TryGetBlockData(out BlockType[,,] blocks))
+            return null;
+            
+        BlockType[,] topBlocks = new BlockType[CHUNK_SIZE_X, CHUNK_SIZE_Z];
+        
+        // Find the top non-air block for each x,z position
+        for (int x = 0; x < CHUNK_SIZE_X; x++)
+        {
+            for (int z = 0; z < CHUNK_SIZE_Z; z++)
+            {
+                topBlocks[x, z] = BlockType.Air;  // Default to air
+                
+                // Find the highest non-air block
+                for (int y = CHUNK_SIZE_Y - 1; y >= 0; y--)
+                {
+                    if (blocks[x, y, z] != BlockType.Air)
+                    {
+                        topBlocks[x, z] = blocks[x, y, z];
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return topBlocks;
+    }
+
+    // Notify minimap when a block is broken or placed
+    private void NotifyMinimapOfChunkChange(Vector2Int chunkPos)
+    {
+        MinimapSystem minimap = FindAnyObjectByType<MinimapSystem>();
+        if (minimap != null)
+        {
+            minimap.InvalidateChunkCache(chunkPos);
+        }
     }
 }
 

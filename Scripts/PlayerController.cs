@@ -6,15 +6,15 @@ public class PlayerController : MonoBehaviour
 {
     [Header("Movement Settings")]
     public float walkSpeed = 6.0f;
-    public float runSpeed = 10.0f;
-    public float jumpForce = 8.0f;
+    public float runSpeed = 15.0f;
+    public float jumpForce = 6.0f;
     public float gravity = 20.0f;
     public float mouseSensitivity = 2.0f;
     public float interactionRange = 5.0f;
     
     [Header("Block Interaction")]
-    public float breakCooldown = 0.25f;
-    public float placeCooldown = 0.25f;
+    public float breakCooldown = 0.05f;
+    public float placeCooldown = 0.05f;
     public GameObject blockHighlight;
     
     private CharacterController controller;
@@ -31,6 +31,7 @@ public class PlayerController : MonoBehaviour
     private Vector3? adjacentBlockPos;
     private BlockType selectedBlockType = BlockType.Dirt; // Default block to place
     private BlockHighlight blockHighlightScript;
+    public Camera PlayerCamera;
     
     void Start()
     {
@@ -57,7 +58,7 @@ public class PlayerController : MonoBehaviour
         }
     }
     
-    void Update()
+    void FixedUpdate()
     {
         // Detect if player is grounded
         isGrounded = controller.isGrounded;
@@ -73,6 +74,9 @@ public class PlayerController : MonoBehaviour
         
         // Handle block selection (will be replaced by hotbar later)
         HandleBlockSelection();
+
+        // Handle Camera Zoom
+        HandleCameraZoom();
     }
 
     // Get Position
@@ -80,6 +84,12 @@ public class PlayerController : MonoBehaviour
     public Vector3 GetPosition()
     {
         return transform.position;
+    }
+
+    // Returns player's view rotation in degrees (used for the minimap view cone)
+    public float GetLookRotation()
+    {
+        return transform.eulerAngles.y;
     }
 
     void HandleMovement()
@@ -235,6 +245,27 @@ public class PlayerController : MonoBehaviour
             selectedBlockType = BlockType.Wood;
         else if (Input.GetKeyDown(KeyCode.Alpha6))
             selectedBlockType = BlockType.Leaves;
+    }
+
+    void HandleCameraZoom()
+    {
+        // Get "C" key input
+        if(Input.GetKeyDown(KeyCode.C))
+        {
+            // Get the camera's field of view
+            float fov = playerCamera.fieldOfView;
+            
+            // Zoom in
+            if(fov == 90)
+            {
+                playerCamera.fieldOfView = 30;
+            }
+            // Zoom out
+            else
+            {
+                playerCamera.fieldOfView = 90;
+            }
+        }
     }
     
     void BreakBlock(Vector3 blockPos)

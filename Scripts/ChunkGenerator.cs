@@ -1,6 +1,8 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading;
+using System.Collections.Concurrent;
 
 public class ChunkGenerator : MonoBehaviour
 {
@@ -32,7 +34,14 @@ public class ChunkGenerator : MonoBehaviour
     public PlayerController playerController; 
     private Vector2Int currentChunk = new Vector2Int(0, 0);
     
-    // Reference to the player controller
+    // Threading related variables
+    private Thread[] chunkGeneratorThreads;
+    private bool isRunning = true;
+    private ConcurrentQueue<Vector2Int> chunkRequestQueue = new ConcurrentQueue<Vector2Int>();
+    private ConcurrentDictionary<Vector2Int, BlockType[,,]> generatedChunksData = new ConcurrentDictionary<Vector2Int, BlockType[,,]>();
+    private List<Vector2Int> chunksToCreate = new List<Vector2Int>();
+    private readonly object chunksToCreateLock = new object();
+    private int maxThreads = 4; // Adjust based on system capabilities
     
     private void Start()
     {
@@ -45,59 +54,148 @@ public class ChunkGenerator : MonoBehaviour
         
         Debug.Log($"Starting in chunk {currentChunk}");
         
-        // Générer les chunks autour du joueur
-        UpdateChunks();
+        // Start chunk generator threads
+        StartChunkGeneratorThreads();
+        
+        // Request initial chunks
+        RequestChunksAround(currentChunk);
+    }
+    
+    private void OnDestroy()
+    {
+        // Signal threads to stop and wait for them to finish
+        isRunning = false;
+        if (chunkGeneratorThreads != null)
+        {
+            foreach (Thread thread in chunkGeneratorThreads)
+            {
+                if (thread != null && thread.IsAlive)
+                {
+                    thread.Join(100); // Wait 100ms for thread to finish
+                }
+            }
+        }
+    }
+    
+    private void StartChunkGeneratorThreads()
+    {
+        isRunning = true;
+        chunkGeneratorThreads = new Thread[maxThreads];
+        
+        for (int i = 0; i < maxThreads; i++)
+        {
+            chunkGeneratorThreads[i] = new Thread(ChunkGeneratorThreadWork);
+            chunkGeneratorThreads[i].IsBackground = true; // Set as background thread
+            chunkGeneratorThreads[i].Start();
+        }
+    }
+    
+    private void ChunkGeneratorThreadWork()
+    {
+        while (isRunning)
+        {
+            if (chunkRequestQueue.TryDequeue(out Vector2Int chunkPos))
+            {
+                // Generate blocks data in thread
+                BlockType[,,] blocks = GenerateBlocksThreadSafe(chunkPos);
+                
+                // Store the generated data
+                generatedChunksData[chunkPos] = blocks;
+                
+                // Signal main thread that chunk is ready to be created
+                lock (chunksToCreateLock)
+                {
+                    chunksToCreate.Add(chunkPos);
+                }
+            }
+            else
+            {
+                // If no work, sleep briefly to avoid high CPU usage
+                Thread.Sleep(10);
+            }
+        }
     }
     
     private void FixedUpdate()
     {
-        // Obtenir la position du joueur - use Camera.main or player transform reference if available
+        // Obtenir la position du joueur
         Vector3 playerPos = playerController.GetPosition();
         
         // Calculer dans quel chunk se trouve le joueur
         Vector2Int playerChunk = GetChunkPosition(playerPos);
-        //Debug.Log($"Playerpos : {playerPos}\nCurrentChunk : {currentChunk}\nPlayerChunk : {playerChunk}");
 
         // Si le joueur a changé de chunk
         if (playerChunk != currentChunk)
         {
-            //Debug.Log($"Player moved from chunk {currentChunk} to {playerChunk}");
             currentChunk = playerChunk;
-            UpdateChunks();
+            RequestChunksAround(currentChunk);
+        }
+        
+        // Process any chunks that are ready to be created
+        ProcessReadyChunks();
+    }
+    
+    private void ProcessReadyChunks()
+    {
+        List<Vector2Int> chunksToProcess = null;
+        
+        // Get chunks ready for creation
+        lock (chunksToCreateLock)
+        {
+            if (chunksToCreate.Count > 0)
+            {
+                chunksToProcess = new List<Vector2Int>(chunksToCreate);
+                chunksToCreate.Clear();
+            }
+        }
+        
+        if (chunksToProcess != null)
+        {
+            foreach (Vector2Int chunkPos in chunksToProcess)
+            {
+                if (generatedChunksData.TryRemove(chunkPos, out BlockType[,,] blocks))
+                {
+                    CreateChunkGameObject(chunkPos, blocks);
+                }
+            }
         }
     }
     
-    public Vector2Int GetChunkPosition(Vector3 worldPos)
+    private void RequestChunksAround(Vector2Int centerChunk)
     {
-        return new Vector2Int(
-            Mathf.FloorToInt(worldPos.x / CHUNK_SIZE_X),
-            Mathf.FloorToInt(worldPos.z / CHUNK_SIZE_Z)
-        );
-    }
-
-    private void UpdateChunks()
-    {
-        // Liste des chunks à conserver
+        // Track which chunks to keep
         HashSet<Vector2Int> chunksToKeep = new HashSet<Vector2Int>();
         
-        // Générer les chunks autour du joueur
+        // Request chunks around player
         for (int x = -renderDistance; x <= renderDistance; x++)
         {
             for (int z = -renderDistance; z <= renderDistance; z++)
             {
-                Vector2Int chunkPos = new Vector2Int(currentChunk.x + x, currentChunk.y + z);
+                Vector2Int chunkPos = new Vector2Int(centerChunk.x + x, centerChunk.y + z);
                 chunksToKeep.Add(chunkPos);
                 
-                if (!chunks.ContainsKey(chunkPos))
+                // Only request if not already loaded or being generated
+                if (!chunks.ContainsKey(chunkPos) && 
+                    !generatedChunksData.ContainsKey(chunkPos))
                 {
-                    // Générer un nouveau chunk
-                    //Debug.Log($"Generating new chunk at {chunkPos}");
-                    GenerateChunk(chunkPos);
+                    bool contains = false;
+                    foreach (Vector2Int chunk in chunkRequestQueue)
+                    {
+                        if (chunk == chunkPos)
+                        {
+                            contains = true;
+                            break;
+                        }
+                    }
+                    if (!contains)
+                    {
+                        chunkRequestQueue.Enqueue(chunkPos);
+                    }
                 }
             }
         }
         
-        // Supprimer les chunks trop éloignés
+        // Remove chunks that are too far away
         List<Vector2Int> chunksToRemove = new List<Vector2Int>();
         foreach (Vector2Int chunkPos in chunks.Keys)
         {
@@ -109,34 +207,35 @@ public class ChunkGenerator : MonoBehaviour
         
         foreach (Vector2Int chunkPos in chunksToRemove)
         {
-            Debug.Log($"Removing chunk at {chunkPos}");
             Destroy(chunks[chunkPos]);
             chunks.Remove(chunkPos);
         }
     }
     
-    private void GenerateChunk(Vector2Int chunkPos)
+    private void CreateChunkGameObject(Vector2Int chunkPos, BlockType[,,] blocks)
     {
-        // Créer un nouvel objet chunk
+        // Skip if chunk was already created while we were generating
+        if (chunks.ContainsKey(chunkPos))
+            return;
+            
+        // Create the chunk object
         GameObject chunk = Instantiate(chunkPrefab, new Vector3(chunkPos.x * CHUNK_SIZE_X, 0, chunkPos.y * CHUNK_SIZE_Z), Quaternion.identity);
         chunk.name = "Chunk_" + chunkPos.x + "_" + chunkPos.y;
         chunks.Add(chunkPos, chunk);
         
-        // Générer le mesh du chunk
+        // Generate mesh for the chunk
         ChunkMeshGenerator meshGenerator = chunk.GetComponent<ChunkMeshGenerator>();
         if (meshGenerator != null)
         {
-            // Récupérer les blocs pour ce chunk
-            BlockType[,,] blocks = GenerateBlocks(chunkPos);
-            
-            // Générer le mesh avec le matériau de l'atlas
             meshGenerator.GenerateMesh(blocks, blockAtlasMaterial, atlasSize, textureSize);
         }
     }
     
-    private BlockType[,,] GenerateBlocks(Vector2Int chunkPos)
+    // Thread-safe version of GenerateBlocks that doesn't use Unity API
+    private BlockType[,,] GenerateBlocksThreadSafe(Vector2Int chunkPos)
     {
         BlockType[,,] blocks = new BlockType[CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z];
+        System.Random random = new System.Random(seed + chunkPos.x * 10000 + chunkPos.y);
         
         // Générer le terrain
         for (int x = 0; x < CHUNK_SIZE_X; x++)
@@ -148,8 +247,8 @@ public class ChunkGenerator : MonoBehaviour
                 float worldZ = chunkPos.y * CHUNK_SIZE_Z + z;
                 
                 // Générer la hauteur du terrain avec le bruit de Perlin
-                float terrainHeight = GenerateTerrainHeight(worldX, worldZ);
-                int heightInt = Mathf.FloorToInt(terrainHeight);
+                float terrainHeight = GenerateTerrainHeightThreadSafe(worldX, worldZ);
+                int heightInt = (int)System.Math.Floor(terrainHeight);
                 
                 // Remplir les blocs du terrain
                 for (int y = 0; y < CHUNK_SIZE_Y; y++)
@@ -183,22 +282,22 @@ public class ChunkGenerator : MonoBehaviour
                         blocks[x, y, z] = BlockType.Stone;
                         
                         // Générer les grottes
-                        if (ShouldBeACave(worldX, y, worldZ))
+                        if (ShouldBeACaveThreadSafe(worldX, y, worldZ))
                         {
                             blocks[x, y, z] = BlockType.Air;
                         }
                         // Générer les minerais
                         else
                         {
-                            blocks[x, y, z] = GenerateOre(worldX, y, worldZ, blocks[x, y, z]);
+                            blocks[x, y, z] = GenerateOreThreadSafe(worldX, y, worldZ, blocks[x, y, z]);
                         }
                     }
                 }
                 
                 // Générer les arbres (1% de chance sur chaque bloc d'herbe)
-                if (Random.value < 0.01f && blocks[x, heightInt, z] == BlockType.Grass)
+                if (random.NextDouble() < 0.01 && blocks[x, heightInt, z] == BlockType.Grass)
                 {
-                    GenerateTree(blocks, x, heightInt + 1, z);
+                    GenerateTreeThreadSafe(blocks, x, heightInt + 1, z);
                 }
             }
         }
@@ -206,30 +305,25 @@ public class ChunkGenerator : MonoBehaviour
         return blocks;
     }
     
-    private float GenerateTerrainHeight(float x, float z)
+    // Thread-safe versions of noise generation methods that don't use Unity's Random or Mathf classes
+    
+    private float GenerateTerrainHeightThreadSafe(float x, float z)
     {
-        // Utiliser plusieurs octaves de bruit de Perlin pour la génération de terrain
+        // Use thread-safe perlin noise
         float height = 0;
         
-        // Première couche: collines de base
-        height += Mathf.PerlinNoise(x * TERRAIN_SCALE + seed, z * TERRAIN_SCALE + seed) * TERRAIN_HEIGHT_MULTIPLIER;
+        height += ThreadSafePerlinNoise(x * TERRAIN_SCALE + seed, z * TERRAIN_SCALE + seed) * TERRAIN_HEIGHT_MULTIPLIER;
+        height += ThreadSafePerlinNoise(x * TERRAIN_SCALE * 2 + seed + 100, z * TERRAIN_SCALE * 2 + seed + 100) * TERRAIN_HEIGHT_MULTIPLIER * 0.5f;
+        height += ThreadSafePerlinNoise(x * TERRAIN_SCALE * 0.5f + seed + 200, z * TERRAIN_SCALE * 0.5f + seed + 200) * TERRAIN_HEIGHT_MULTIPLIER * 1.5f;
         
-        // Deuxième couche: petites variations
-        height += Mathf.PerlinNoise(x * TERRAIN_SCALE * 2 + seed + 100, z * TERRAIN_SCALE * 2 + seed + 100) * TERRAIN_HEIGHT_MULTIPLIER * 0.5f;
-        
-        // Troisième couche: grandes formations
-        height += Mathf.PerlinNoise(x * TERRAIN_SCALE * 0.5f + seed + 200, z * TERRAIN_SCALE * 0.5f + seed + 200) * TERRAIN_HEIGHT_MULTIPLIER * 1.5f;
-        
-        // Normaliser la hauteur
         height = height / 3.0f + BASE_TERRAIN_HEIGHT;
         
         return height;
     }
     
-    private bool ShouldBeACave(float x, float y, float z)
+    private bool ShouldBeACaveThreadSafe(float x, float y, float z)
     {
-        // Implémentation de bruit 3D compatible avec Unity
-        float cavesNoise = Perlin3D(
+        float cavesNoise = Perlin3DThreadSafe(
             x * CAVES_SCALE + seed + 300,
             y * CAVES_SCALE + seed + 300,
             z * CAVES_SCALE + seed + 300
@@ -238,14 +332,14 @@ public class ChunkGenerator : MonoBehaviour
         return cavesNoise > CAVES_THRESHOLD;
     }
     
-    private BlockType GenerateOre(float x, float y, float z, BlockType currentBlock)
+    private BlockType GenerateOreThreadSafe(float x, float y, float z, BlockType currentBlock)
     {
         // Ne générer des minerais que dans la pierre
         if (currentBlock != BlockType.Stone)
             return currentBlock;
         
-        // Implémentation de bruit 3D compatible avec Unity
-        float oreNoise = Perlin3D(
+        // Thread-safe 3D noise
+        float oreNoise = Perlin3DThreadSafe(
             x * ORE_SCALE + seed + 400,
             y * ORE_SCALE + seed + 400,
             z * ORE_SCALE + seed + 400
@@ -268,12 +362,21 @@ public class ChunkGenerator : MonoBehaviour
         return currentBlock;
     }
     
-    private void GenerateTree(BlockType[,,] blocks, int x, int y, int z)
+    private Vector2Int GetChunkPosition(Vector3 position)
+    {
+        // Convert world position to chunk coordinates
+        int chunkX = Mathf.FloorToInt(position.x / CHUNK_SIZE_X);
+        int chunkZ = Mathf.FloorToInt(position.z / CHUNK_SIZE_Z);
+        return new Vector2Int(chunkX, chunkZ);
+    }
+    
+    private void GenerateTreeThreadSafe(BlockType[,,] blocks, int x, int y, int z)
     {
         // Vérifier si l'arbre peut être placé (espace suffisant)
         if (y + 4 >= CHUNK_SIZE_Y || x <= 1 || x >= CHUNK_SIZE_X - 2 || z <= 1 || z >= CHUNK_SIZE_Z - 2)
             return;
         
+        // Thread-safe tree generation (no Unity API calls)
         // Tronc
         for (int treeY = 0; treeY < 5; treeY++)
         {
@@ -315,19 +418,89 @@ public class ChunkGenerator : MonoBehaviour
         }
     }
     
-    // Implémentation personnalisée de bruit 3D basée sur le bruit de Perlin 2D
-    private float Perlin3D(float x, float y, float z)
+    // Thread-safe Perlin noise implementations
+    private float ThreadSafePerlinNoise(float x, float y)
     {
-        // Utiliser plusieurs couches de Perlin 2D pour simuler du 3D
-        float xy = Mathf.PerlinNoise(x, y);
-        float yz = Mathf.PerlinNoise(y, z);
-        float xz = Mathf.PerlinNoise(x, z);
+        // Simplex noise could be used here for better performance
+        // This is a simple implementation of perlin-like noise
         
-        float yx = Mathf.PerlinNoise(y, x);
-        float zy = Mathf.PerlinNoise(z, y);
-        float zx = Mathf.PerlinNoise(z, x);
+        // Convert to grid coordinates
+        int X = (int)System.Math.Floor(x);
+        int Y = (int)System.Math.Floor(y);
         
-        // Combiner les résultats
+        // Get fractional parts
+        x -= X;
+        y -= Y;
+        
+        // Wrap to ensure we stay in the positive range for random generation
+        X = X & 255;
+        Y = Y & 255;
+        
+        // Calculate dot products from pseudorandom gradients
+        float n00 = DotGridGradient(X, Y, x, y);
+        float n01 = DotGridGradient(X, Y + 1, x, y - 1);
+        float n10 = DotGridGradient(X + 1, Y, x - 1, y);
+        float n11 = DotGridGradient(X + 1, Y + 1, x - 1, y - 1);
+        
+        // Smooth interpolation
+        float u = Fade(x);
+        float v = Fade(y);
+        
+        // Interpolate
+        float x0 = Lerp(n00, n10, u);
+        float x1 = Lerp(n01, n11, u);
+        float result = Lerp(x0, x1, v);
+        
+        // Perlin noise typically returns values in [-1,1], but we normalize to [0,1]
+        return (result + 1) / 2;
+    }
+    
+    private float DotGridGradient(int ix, int iy, float x, float y)
+    {
+        // Use a hashing function to get a reproducible pseudorandom gradient
+        int hash = GetHashValue(ix, iy, seed);
+        
+        // Convert hash to a gradient direction
+        float angle = hash * (3.14159f / 128.0f);
+        float gradX = (float)System.Math.Cos(angle);
+        float gradY = (float)System.Math.Sin(angle);
+        
+        // Compute dot product
+        return (x * gradX + y * gradY);
+    }
+    
+    private int GetHashValue(int x, int y, int seed)
+    {
+        // Simple hash function for reproducible pseudorandom values
+        int hash = seed;
+        hash ^= x * 73856093;
+        hash ^= y * 19349663;
+        hash = hash % 256;
+        return hash;
+    }
+    
+    private float Fade(float t)
+    {
+        // Smoothstep function: 6t^5 - 15t^4 + 10t^3
+        return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+    
+    private float Lerp(float a, float b, float t)
+    {
+        return a + t * (b - a);
+    }
+    
+    private float Perlin3DThreadSafe(float x, float y, float z)
+    {
+        // Thread-safe 3D Perlin noise approximation using 2D noise slices
+        float xy = ThreadSafePerlinNoise(x, y);
+        float yz = ThreadSafePerlinNoise(y, z);
+        float xz = ThreadSafePerlinNoise(x, z);
+        
+        float yx = ThreadSafePerlinNoise(y, x);
+        float zy = ThreadSafePerlinNoise(z, y);
+        float zx = ThreadSafePerlinNoise(z, x);
+        
         return (xy + yz + xz + yx + zy + zx) / 6.0f;
     }
 
@@ -474,6 +647,12 @@ public class ChunkGenerator : MonoBehaviour
                 }
             }
         }
+    }
+
+    // Old method for compatibility with existing calls from the main thread
+    private BlockType[,,] GenerateBlocks(Vector2Int chunkPos)
+    {
+        return GenerateBlocksThreadSafe(chunkPos);
     }
 }
 

@@ -10,7 +10,7 @@ public class ChunkGenerator : MonoBehaviour
     public float textureSize = 16f; // Each texture is 16x16 pixels
     
     public int seed = 0;
-    public int renderDistance = 3;
+    public int renderDistance = 8;
     
     private const int CHUNK_SIZE_X = 16;
     private const int CHUNK_SIZE_Y = 384;
@@ -24,41 +24,57 @@ public class ChunkGenerator : MonoBehaviour
     private const float CAVES_THRESHOLD = 0.4f;
     
     private const float ORE_SCALE = 0.2f;
-    private const float COAL_THRESHOLD = 0.7f;
-    private const float IRON_THRESHOLD = 0.8f;
-    private const float GOLD_THRESHOLD = 0.9f;
+    private const float COAL_THRESHOLD = 0.35f;
+    private const float IRON_THRESHOLD = 0.4f;
+    private const float GOLD_THRESHOLD = 0.45f;
     
     private Dictionary<Vector2Int, GameObject> chunks = new Dictionary<Vector2Int, GameObject>();
+    public PlayerController playerController; 
     private Vector2Int currentChunk = new Vector2Int(0, 0);
+    
+    // Reference to the player controller
     
     private void Start()
     {
         // Initialiser le générateur de nombres aléatoires avec la seed
         Random.InitState(seed);
         
+        // Get initial player position and calculate current chunk
+        Vector3 playerPos = playerController.GetPosition();
+        currentChunk = GetChunkPosition(playerPos);
+        
+        Debug.Log($"Starting in chunk {currentChunk}");
+        
         // Générer les chunks autour du joueur
         UpdateChunks();
     }
     
-    private void Update()
+    private void FixedUpdate()
     {
-        // Obtenir la position du joueur
-        Vector3 playerPos = transform.position;
+        // Obtenir la position du joueur - use Camera.main or player transform reference if available
+        Vector3 playerPos = playerController.GetPosition();
         
         // Calculer dans quel chunk se trouve le joueur
-        Vector2Int playerChunk = new Vector2Int(
-            Mathf.FloorToInt(playerPos.x / CHUNK_SIZE_X),
-            Mathf.FloorToInt(playerPos.z / CHUNK_SIZE_Z)
-        );
-        
+        Vector2Int playerChunk = GetChunkPosition(playerPos);
+        //Debug.Log($"Playerpos : {playerPos}\nCurrentChunk : {currentChunk}\nPlayerChunk : {playerChunk}");
+
         // Si le joueur a changé de chunk
         if (playerChunk != currentChunk)
         {
+            //Debug.Log($"Player moved from chunk {currentChunk} to {playerChunk}");
             currentChunk = playerChunk;
             UpdateChunks();
         }
     }
     
+    public Vector2Int GetChunkPosition(Vector3 worldPos)
+    {
+        return new Vector2Int(
+            Mathf.FloorToInt(worldPos.x / CHUNK_SIZE_X),
+            Mathf.FloorToInt(worldPos.z / CHUNK_SIZE_Z)
+        );
+    }
+
     private void UpdateChunks()
     {
         // Liste des chunks à conserver
@@ -75,6 +91,7 @@ public class ChunkGenerator : MonoBehaviour
                 if (!chunks.ContainsKey(chunkPos))
                 {
                     // Générer un nouveau chunk
+                    //Debug.Log($"Generating new chunk at {chunkPos}");
                     GenerateChunk(chunkPos);
                 }
             }
@@ -92,6 +109,7 @@ public class ChunkGenerator : MonoBehaviour
         
         foreach (Vector2Int chunkPos in chunksToRemove)
         {
+            Debug.Log($"Removing chunk at {chunkPos}");
             Destroy(chunks[chunkPos]);
             chunks.Remove(chunkPos);
         }

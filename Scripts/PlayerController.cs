@@ -74,7 +74,14 @@ public class PlayerController : MonoBehaviour
         // Handle block selection (will be replaced by hotbar later)
         HandleBlockSelection();
     }
-    
+
+    // Get Position
+
+    public Vector3 GetPosition()
+    {
+        return transform.position;
+    }
+
     void HandleMovement()
     {
         // Get input axes

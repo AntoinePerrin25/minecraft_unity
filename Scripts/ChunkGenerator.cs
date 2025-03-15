@@ -21,6 +21,8 @@ public class ChunkGenerator : MonoBehaviour
     private const float TERRAIN_SCALE = 0.05f;
     private const float TERRAIN_HEIGHT_MULTIPLIER = 80f;
     private const float BASE_TERRAIN_HEIGHT = 128f;
+
+    private const float BIOME_SCALE = 0.1f;
     
     private const float CAVES_SCALE = 0.1f;
     private const float CAVES_THRESHOLD = 0.4f;
@@ -297,7 +299,7 @@ public class ChunkGenerator : MonoBehaviour
                 // Générer les arbres (1% de chance sur chaque bloc d'herbe)
                 if (random.NextDouble() < 0.01 && blocks[x, heightInt, z] == BlockType.Grass)
                 {
-                    GenerateTreeThreadSafe(blocks, x, heightInt + 1, z);
+                    GenerateTreeThreadSafe(blocks, x, heightInt + 1, z, chunkPos);
                 }
             }
         }
@@ -370,11 +372,57 @@ public class ChunkGenerator : MonoBehaviour
         return new Vector2Int(chunkX, chunkZ);
     }
     
-    private void GenerateTreeThreadSafe(BlockType[,,] blocks, int x, int y, int z)
+    // Add this method for biome calculation
+    private BiomeType CalculateBiomeType(Vector2Int chunkPos)
+    {
+        // Use noise to create smooth biome transitions
+        float biomeNoise = ThreadSafePerlinNoise(
+            chunkPos.x * BIOME_SCALE + seed * 0.3f,
+            chunkPos.y * BIOME_SCALE + seed * 0.7f
+        );
+        
+        // Use the noise value to determine biome type
+        if (biomeNoise < 0.3f)
+            return BiomeType.Forest; // Green leaves
+        else if (biomeNoise < 0.6f)
+            return BiomeType.Autumn; // Red leaves
+        else
+            return BiomeType.Savanna; // Brown leaves
+    }
+    
+    // Add this method to get the appropriate leaf type based on biome and transparency
+    private BlockType GetLeafTypeForBiome(BiomeType biome, bool transparent)
+    {
+        switch (biome)
+        {
+            case BiomeType.Forest:
+                return transparent ? BlockType.TransparentLeavesGreen : BlockType.LeavesGreen;
+                
+            case BiomeType.Autumn:
+                return transparent ? BlockType.TransparentLeavesRed : BlockType.LeavesRed;
+                
+            case BiomeType.Savanna:
+                return transparent ? BlockType.TransparentLeavesBrown : BlockType.LeavesBrown;
+                
+            default:
+                return transparent ? BlockType.TransparentLeavesGreen : BlockType.LeavesGreen;
+        }
+    }
+    
+    // Modify the tree generation methods to use biome-specific leaves
+    private void GenerateTreeThreadSafe(BlockType[,,] blocks, int x, int y, int z, Vector2Int chunkPos)
     {
         // Vérifier si l'arbre peut être placé (espace suffisant)
         if (y + 4 >= CHUNK_SIZE_Y || x <= 1 || x >= CHUNK_SIZE_X - 2 || z <= 1 || z >= CHUNK_SIZE_Z - 2)
             return;
+        
+        // Determine biome for this chunk
+        BiomeType biome = CalculateBiomeType(chunkPos);
+        
+        // Get leaf type for this biome (with 30% chance of transparency)
+        System.Random random = new System.Random(seed + chunkPos.x * 73856 + chunkPos.y * 19349 + x * 384 + z);
+        bool transparent = random.NextDouble() < 0.3f;
+        BlockType leafType = GetLeafTypeForBiome(biome, transparent);
         
         // Thread-safe tree generation (no Unity API calls)
         // Tronc
@@ -392,7 +440,7 @@ public class ChunkGenerator : MonoBehaviour
                     z + leafZ >= 0 && z + leafZ < CHUNK_SIZE_Z &&
                     y + 3 < CHUNK_SIZE_Y)
                 {
-                    blocks[x + leafX, y + 3, z + leafZ] = BlockType.Leaves;
+                    blocks[x + leafX, y + 3, z + leafZ] = leafType;
                 }
             }
         }
@@ -406,7 +454,7 @@ public class ChunkGenerator : MonoBehaviour
                     z + leafZ >= 0 && z + leafZ < CHUNK_SIZE_Z &&
                     y + 4 < CHUNK_SIZE_Y)
                 {
-                    blocks[x + leafX, y + 4, z + leafZ] = BlockType.Leaves;
+                    blocks[x + leafX, y + 4, z + leafZ] = leafType;
                 }
             }
         }
@@ -414,7 +462,7 @@ public class ChunkGenerator : MonoBehaviour
         // Feuille supérieure
         if (y + 5 < CHUNK_SIZE_Y)
         {
-            blocks[x, y + 5, z] = BlockType.Leaves;
+            blocks[x, y + 5, z] = GetLeafTypeForBiome(biome, false);
         }
     }
     
@@ -466,7 +514,7 @@ public class ChunkGenerator : MonoBehaviour
         float gradY = (float)System.Math.Sin(angle);
         
         // Compute dot product
-        return (x * gradX + y * gradY);
+        return x * gradX + y * gradY;
     }
     
     private int GetHashValue(int x, int y, int seed)
@@ -762,6 +810,53 @@ public class ChunkGenerator : MonoBehaviour
             minimap.InvalidateChunkCache(chunkPos);
         }
     }
+
+    // Add method to get block type at specific position
+    public BlockType GetBlockTypeAt(Vector3Int blockPos)
+    {
+        // Calculate chunk position
+        Vector2Int chunkPos = new Vector2Int(
+            Mathf.FloorToInt(blockPos.x / CHUNK_SIZE_X),
+            Mathf.FloorToInt(blockPos.z / CHUNK_SIZE_Z)
+        );
+        
+        // Calculate local block position within the chunk
+        int localX = blockPos.x - chunkPos.x * CHUNK_SIZE_X;
+        int localY = blockPos.y;
+        int localZ = blockPos.z - chunkPos.y * CHUNK_SIZE_Z;
+        
+        // If localX or localZ are negative, adjust them and the chunk position
+        if (localX < 0)
+        {
+            localX += CHUNK_SIZE_X;
+            chunkPos.x--;
+        }
+        if (localZ < 0)
+        {
+            localZ += CHUNK_SIZE_Z;
+            chunkPos.y--;
+        }
+        
+        // Skip if the block is outside the world bounds
+        if (localY < 0 || localY >= CHUNK_SIZE_Y)
+            return BlockType.Air;
+        
+        // Find the chunk gameobject
+        if (chunks.TryGetValue(chunkPos, out GameObject chunkObject))
+        {
+            ChunkMeshGenerator meshGenerator = chunkObject.GetComponent<ChunkMeshGenerator>();
+            if (meshGenerator != null)
+            {
+                // Get blocks data from the chunk
+                if (meshGenerator.TryGetBlockData(out BlockType[,,] blocks))
+                {
+                    return blocks[localX, localY, localZ];
+                }
+            }
+        }
+        
+        return BlockType.Air;
+    }
 }
 
 // Types de blocs disponibles avec informations de texture
@@ -777,7 +872,19 @@ public enum BlockType
     Iron,
     Gold,
     Wood,
-    Leaves
+    LeavesGreen,
+    LeavesBrown,
+    LeavesRed,
+    TransparentLeavesGreen = LeavesGreen + 16,
+    TransparentLeavesBrown = LeavesBrown + 16,
+    TransparentLeavesRed = LeavesRed + 16,
+}
+
+public enum BiomeType
+{
+    Forest,
+    Autumn,
+    Savanna,
 }
 
 // Informations de texture pour chaque bloc
@@ -831,8 +938,18 @@ public static class BlockData
                 return new FaceTextures(9);
             case BlockType.Wood:
                 return new FaceTextures(17, 16, 17); // Top, Side, Bottom
-            case BlockType.Leaves:
+            case BlockType.LeavesGreen:
                 return new FaceTextures(18);
+            case BlockType.LeavesBrown:
+                return new FaceTextures(19);
+            case BlockType.LeavesRed:
+                return new FaceTextures(20);
+            case BlockType.TransparentLeavesGreen:
+                return new FaceTextures(18+16);
+            case BlockType.TransparentLeavesBrown:
+                return new FaceTextures(19+16);
+            case BlockType.TransparentLeavesRed:
+                return new FaceTextures(20+16);
             default:
                 return new FaceTextures(0);
         }
@@ -841,6 +958,13 @@ public static class BlockData
     // Indique si le bloc est transparent
     public static bool IsTransparent(BlockType blockType)
     {
-        return blockType == BlockType.Air || blockType == BlockType.Water || blockType == BlockType.Leaves;
+        return  blockType == BlockType.Air ||
+                blockType == BlockType.Water || 
+                blockType == BlockType.LeavesGreen ||
+                blockType == BlockType.LeavesBrown ||
+                blockType == BlockType.LeavesRed ||
+                blockType == BlockType.TransparentLeavesGreen ||
+                blockType == BlockType.TransparentLeavesBrown ||
+                blockType == BlockType.TransparentLeavesRed;
     }
 }

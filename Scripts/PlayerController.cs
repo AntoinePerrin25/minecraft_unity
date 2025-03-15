@@ -16,6 +16,11 @@ public class PlayerController : MonoBehaviour
     public float breakCooldown = 0.05f;
     public float placeCooldown = 0.05f;
     public GameObject blockHighlight;
+    public float blockCollectDistance = 1.5f; // Distance to collect dropped blocks
+    
+    // References to inventory/hotbar
+    public InventorySystem inventorySystem;
+    public Hotbar hotbar;
     
     private CharacterController controller;
     private Camera playerCamera;
@@ -231,20 +236,44 @@ public class PlayerController : MonoBehaviour
     
     void HandleBlockSelection()
     {
-        // Temporary block selection via number keys
-        // This will be replaced by proper hotbar later
-        if (Input.GetKeyDown(KeyCode.Alpha1))
-            selectedBlockType = BlockType.Dirt;
-        else if (Input.GetKeyDown(KeyCode.Alpha2))
-            selectedBlockType = BlockType.Grass;
-        else if (Input.GetKeyDown(KeyCode.Alpha3))
-            selectedBlockType = BlockType.Stone;
-        else if (Input.GetKeyDown(KeyCode.Alpha4))
-            selectedBlockType = BlockType.Cobblestone;
-        else if (Input.GetKeyDown(KeyCode.Alpha5))
-            selectedBlockType = BlockType.Wood;
-        else if (Input.GetKeyDown(KeyCode.Alpha6))
-            selectedBlockType = BlockType.Leaves;
+        // Use hotbar system for block selection if available
+        if (hotbar != null)
+        {
+            selectedBlockType = hotbar.GetSelectedBlockType();
+        }
+        else
+        {
+            // Fallback to temporary direct selection via number keys
+            if (Input.GetKeyDown(KeyCode.Alpha1))
+                selectedBlockType = BlockType.Dirt;
+            else if (Input.GetKeyDown(KeyCode.Alpha2))
+                selectedBlockType = BlockType.Grass;
+            else if (Input.GetKeyDown(KeyCode.Alpha3))
+                selectedBlockType = BlockType.Stone;
+            else if (Input.GetKeyDown(KeyCode.Alpha4))
+                selectedBlockType = BlockType.Cobblestone;
+            else if (Input.GetKeyDown(KeyCode.Alpha5))
+                selectedBlockType = BlockType.Wood;
+            else if (Input.GetKeyDown(KeyCode.Alpha6))
+            {
+                // rotates through the leaves
+                if (selectedBlockType == BlockType.LeavesGreen)
+                    selectedBlockType = BlockType.TransparentLeavesGreen;
+                else if (selectedBlockType == BlockType.TransparentLeavesGreen)
+                    selectedBlockType = BlockType.LeavesBrown;
+                else if (selectedBlockType == BlockType.LeavesBrown)
+                    selectedBlockType = BlockType.TransparentLeavesBrown;
+                else if (selectedBlockType == BlockType.TransparentLeavesBrown)
+                    selectedBlockType = BlockType.LeavesRed;
+                else if (selectedBlockType == BlockType.LeavesRed)
+                    selectedBlockType = BlockType.TransparentLeavesRed;
+                else if (selectedBlockType == BlockType.TransparentLeavesRed)
+                    selectedBlockType = BlockType.LeavesGreen;
+                else
+                    selectedBlockType = BlockType.LeavesGreen;
+            }
+
+        }
     }
 
     void HandleCameraZoom()
@@ -274,24 +303,37 @@ public class PlayerController : MonoBehaviour
         int chunkX = Mathf.FloorToInt(blockPos.x / 16);
         int chunkZ = Mathf.FloorToInt(blockPos.z / 16);
         
-        // Find world generator using non-deprecated method
+        // Get the block type before breaking
         ChunkGenerator worldGenerator = FindAnyObjectByType<ChunkGenerator>();
         
         if (worldGenerator != null)
         {
-            // Call a method to break the block at this position
+            // Get the block type at this position
+            BlockType blockType = worldGenerator.GetBlockTypeAt(new Vector3Int(
+                Mathf.FloorToInt(blockPos.x),
+                Mathf.FloorToInt(blockPos.y),
+                Mathf.FloorToInt(blockPos.z)
+            ));
+            
+            // Break the block
             StartCoroutine(worldGenerator.BreakBlockAt(new Vector3Int(
                 Mathf.FloorToInt(blockPos.x), 
                 Mathf.FloorToInt(blockPos.y),
                 Mathf.FloorToInt(blockPos.z)
             )));
+            
+            // If we have an inventory system, collect the block
+            if (inventorySystem != null && blockType != BlockType.Air)
+            {
+                inventorySystem.CollectBlock(blockType);
+            }
         }
     }
     
     void PlaceBlock(Vector3? position, BlockType blockType)
     {
         // Don't place if there's no valid position
-        if (!position.HasValue)
+        if (!position.HasValue || blockType == BlockType.Air)
             return;
             
         Vector3 blockPos = position.Value;
@@ -310,18 +352,28 @@ public class PlayerController : MonoBehaviour
         // Check if player is inside the block position
         if (playerBounds.Intersects(blockBounds))
             return;
-            
-        // Find world generator using non-deprecated method
-        ChunkGenerator worldGenerator = FindAnyObjectByType<ChunkGenerator>();
         
-        if (worldGenerator != null)
+        // Check if we have the block in our inventory and consume it
+        bool canPlace = true;
+        if (hotbar != null)
         {
-            // Call a method to place the block at this position
-            StartCoroutine(worldGenerator.PlaceBlockAt(new Vector3Int(
-                Mathf.FloorToInt(blockPos.x), 
-                Mathf.FloorToInt(blockPos.y),
-                Mathf.FloorToInt(blockPos.z)
-            ), blockType));
+            canPlace = hotbar.ConsumeSelectedBlock();
+        }
+        
+        if (canPlace)
+        {
+            // Find world generator
+            ChunkGenerator worldGenerator = FindAnyObjectByType<ChunkGenerator>();
+            
+            if (worldGenerator != null)
+            {
+                // Call a method to place the block at this position
+                StartCoroutine(worldGenerator.PlaceBlockAt(new Vector3Int(
+                    Mathf.FloorToInt(blockPos.x), 
+                    Mathf.FloorToInt(blockPos.y),
+                    Mathf.FloorToInt(blockPos.z)
+                ), blockType));
+            }
         }
     }
 }

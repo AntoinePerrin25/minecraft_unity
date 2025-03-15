@@ -27,16 +27,21 @@ public class MinimapSystem : MonoBehaviour
     
     private readonly Dictionary<BlockType, Color> blockColors = new Dictionary<BlockType, Color>()
     {
-        { BlockType.Air, new Color(0.8f, 0.8f, 1.0f) },      // Light blue for air
-        { BlockType.Grass, new Color(0.3f, 0.8f, 0.3f) },    // Green for grass
-        { BlockType.Dirt, new Color(0.6f, 0.4f, 0.2f) },     // Brown for dirt
-        { BlockType.Stone, new Color(0.5f, 0.5f, 0.5f) },    // Grey for stone
-        { BlockType.Water, new Color(0.2f, 0.2f, 0.8f) },    // Blue for water
-        { BlockType.Coal, new Color(0.2f, 0.2f, 0.2f) },     // Dark grey for coal
-        { BlockType.Iron, new Color(0.8f, 0.7f, 0.6f) },     // Light brown for iron
-        { BlockType.Gold, new Color(1.0f, 0.8f, 0.0f) },     // Yellow for gold
-        { BlockType.Wood, new Color(0.6f, 0.3f, 0.0f) },     // Dark brown for wood
-        { BlockType.Leaves, new Color(0.0f, 0.5f, 0.0f) }    // Dark green for leaves
+        { BlockType.Air,                    new Color(0.8f, 0.8f, 1.0f)     },      // Light blue for air
+        { BlockType.Grass,                  new Color(0.3f, 0.8f, 0.3f)     },      // Green for grass
+        { BlockType.Dirt,                   new Color(0.6f, 0.4f, 0.2f)     },      // Brown for dirt
+        { BlockType.Stone,                  new Color(0.5f, 0.5f, 0.5f)     },      // Grey for stone
+        { BlockType.Water,                  new Color(0.2f, 0.2f, 0.8f)     },      // Blue for water
+        { BlockType.Coal,                   new Color(0.2f, 0.2f, 0.2f)     },      // Dark grey for coal
+        { BlockType.Iron,                   new Color(0.8f, 0.7f, 0.6f)     },      // Light brown for iron
+        { BlockType.Gold,                   new Color(1.0f, 0.8f, 0.0f)     },      // Yellow for gold
+        { BlockType.Wood,                   new Color(0.6f, 0.3f, 0.0f)     },      // Dark brown for wood
+        { BlockType.LeavesGreen,            new Color(0.0f, 0.5f, 0.0f)     },      // Dark green
+        { BlockType.LeavesBrown,            new Color(0.45f, 0.32f, 0.18f)  },      // Brown
+        { BlockType.LeavesRed,              new Color(0.6f, 0.1f, 0.1f)     },      // Red
+        { BlockType.TransparentLeavesGreen, new Color(0.2f, 0.7f, 0.2f)     },      // Lighter green
+        { BlockType.TransparentLeavesBrown, new Color(0.55f, 0.42f, 0.28f)  },      // Lighter brown
+        { BlockType.TransparentLeavesRed,   new Color(0.8f, 0.2f, 0.2f)     }       // Lighter red
     };
     
     void Start()
@@ -208,7 +213,7 @@ public class MinimapSystem : MonoBehaviour
         // Draw chunk as a colored square
         for (int x = 0; x < size; x++)
         {
-            for (int z = 0; x < size; z++)
+            for (int z = 0; z < size; z++) // Fixed loop variable from 'x' to 'z'
             {
                 int pixelX = startX + x;
                 int pixelZ = startZ + z;

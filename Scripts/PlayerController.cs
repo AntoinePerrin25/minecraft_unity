@@ -38,6 +38,11 @@ public class PlayerController : MonoBehaviour
     private BlockHighlight blockHighlightScript;
     public Camera PlayerCamera;
     
+    
+    void Awake()
+    {
+        Application.targetFrameRate = 60;
+    }
     void Start()
     {
         controller = GetComponent<CharacterController>();
@@ -62,6 +67,13 @@ public class PlayerController : MonoBehaviour
             blockHighlight.SetActive(false);
         }
     }
+
+    void Update()
+    {
+        isGrounded = controller.isGrounded;
+        HandleCameraRotation();
+
+    }
     
     void FixedUpdate()
     {
@@ -70,9 +82,6 @@ public class PlayerController : MonoBehaviour
         
         // Handle player movement
         HandleMovement();
-        
-        // Handle camera rotation
-        HandleCameraRotation();
         
         // Handle block interaction
         HandleBlockInteraction();

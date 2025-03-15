@@ -3,6 +3,7 @@ Shader "Unlit/Optimizations"
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
+        [Toggle] _UseMipMap("Use Mip Maps", Float) = 0
     }
     SubShader
     {
@@ -66,9 +67,14 @@ Shader "Unlit/Optimizations"
 
             fixed4 frag (v2f i) : SV_Target
             {
-                // sample the texture
+                #ifdef _USEMIPMAP_ON
+                // Use regular texture sampling with mipmaps
                 fixed4 col = tex2D(_MainTex, i.uv);
-                // apply fog
+                #else
+                // Force level 0 mipmap for crisp pixel art
+                fixed4 col = tex2Dlod(_MainTex, float4(i.uv, 0, 0));
+                #endif
+                
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
             }
@@ -134,7 +140,14 @@ Shader "Unlit/Optimizations"
 
             fixed4 frag (v2f i) : SV_Target
             {
+                #ifdef _USEMIPMAP_ON
+                // Use regular texture sampling with mipmaps
                 fixed4 col = tex2D(_MainTex, i.uv);
+                #else
+                // Force level 0 mipmap for crisp pixel art
+                fixed4 col = tex2Dlod(_MainTex, float4(i.uv, 0, 0));
+                #endif
+                
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
             }

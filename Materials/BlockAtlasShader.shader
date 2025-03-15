@@ -9,12 +9,20 @@ Shader "Custom/BlockAtlas"
         Tags { "RenderType"="Opaque" }
         LOD 100
 
+        Cull Back        // Only render back faces (standard culling)
+        ZWrite On        // Write to depth buffer
+        ZTest LEqual
+
+        // Note: We'll set up the shader to disable Z clipping using a shader feature
+
         Pass
         {
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_fog
+            #pragma shader_feature _ZCLIP_OFF
+
             #include "UnityCG.cginc"
 
             struct appdata
@@ -36,7 +44,20 @@ Shader "Custom/BlockAtlas"
             v2f vert (appdata v)
             {
                 v2f o;
+                
+                #ifdef _ZCLIP_OFF
+                // Disable Z clip by playing with the projection matrix
+                float4 clipPos = UnityObjectToClipPos(v.vertex);
+                // Force w to be large enough that z/w is always in valid range
+                // This effectively disables z clipping for this vertex
+                if (clipPos.w < 0.01)
+                    clipPos.w = 0.01;
+                o.vertex = clipPos;
+                #else
+                // Standard vertex transformation
                 o.vertex = UnityObjectToClipPos(v.vertex);
+                #endif
+                
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 UNITY_TRANSFER_FOG(o,o.vertex);
                 return o;
@@ -61,6 +82,10 @@ Shader "Custom/BlockAtlas"
     {
         Tags { "RenderType"="Transparent" "Queue"="Transparent" }
         LOD 100
+
+        Cull Off        // Render both sides for transparent blocks
+        ZWrite On       // Still write to depth buffer
+        ZTest LEqual    // Same z test as the opaque version
         Blend SrcAlpha OneMinusSrcAlpha
         
         Pass
@@ -90,7 +115,17 @@ Shader "Custom/BlockAtlas"
             v2f vert (appdata v)
             {
                 v2f o;
+                
+                #ifdef _ZCLIP_OFF
+                // Disable Z clip
+                float4 clipPos = UnityObjectToClipPos(v.vertex);
+                if (clipPos.w < 0.01)
+                    clipPos.w = 0.01;
+                o.vertex = clipPos;
+                #else
                 o.vertex = UnityObjectToClipPos(v.vertex);
+                #endif
+                
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 UNITY_TRANSFER_FOG(o,o.vertex);
                 return o;

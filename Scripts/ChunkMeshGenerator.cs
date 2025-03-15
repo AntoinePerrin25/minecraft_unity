@@ -49,10 +49,20 @@ public class ChunkMeshGenerator : MonoBehaviour
         }
 
         // Créer le mesh
+        
+        /*
         Mesh mesh = new Mesh();
         mesh.vertices = vertices.ToArray();
         mesh.triangles = triangles.ToArray();
         mesh.uv = uvs.ToArray();
+        */
+
+        Mesh mesh = new Mesh();
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(triangles, 0);
+        mesh.SetUVs(0, uvs);
+        
+        mesh.Optimize();
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
 

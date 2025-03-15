@@ -12,15 +12,15 @@ public class ChunkGenerator : MonoBehaviour
     public float textureSize = 16f; // Each texture is 16x16 pixels
     
     public int seed = 0;
-    public int renderDistance = 8;
+    public int renderDistance = 2;
     
     private const int CHUNK_SIZE_X = 16;
-    private const int CHUNK_SIZE_Y = 384;
+    private const int CHUNK_SIZE_Y = 256;
     private const int CHUNK_SIZE_Z = 16;
     
-    private const float TERRAIN_SCALE = 0.05f;
-    private const float TERRAIN_HEIGHT_MULTIPLIER = 80f;
-    private const float BASE_TERRAIN_HEIGHT = 128f;
+    private const float TERRAIN_SCALE = 0.07f;
+    private const float TERRAIN_HEIGHT_MULTIPLIER = 60f;
+    private const float BASE_TERRAIN_HEIGHT = 64f;
 
     private const float BIOME_SCALE = 0.1f;
     
@@ -28,9 +28,9 @@ public class ChunkGenerator : MonoBehaviour
     private const float CAVES_THRESHOLD = 0.4f;
     
     private const float ORE_SCALE = 0.2f;
-    private const float COAL_THRESHOLD = 0.35f;
-    private const float IRON_THRESHOLD = 0.4f;
-    private const float GOLD_THRESHOLD = 0.45f;
+    private const float COAL_THRESHOLD = 0.70f;
+    private const float IRON_THRESHOLD = 0.80f;
+    private const float GOLD_THRESHOLD = 0.90f;
     
     private Dictionary<Vector2Int, GameObject> chunks = new Dictionary<Vector2Int, GameObject>();
     public PlayerController playerController; 
@@ -45,6 +45,10 @@ public class ChunkGenerator : MonoBehaviour
     private readonly object chunksToCreateLock = new object();
     private int maxThreads = 4; // Adjust based on system capabilities
     
+    void Awake()
+    {
+        Application.targetFrameRate = 60;
+    }
     private void Start()
     {
         // Initialiser le générateur de nombres aléatoires avec la seed
@@ -73,7 +77,7 @@ public class ChunkGenerator : MonoBehaviour
             {
                 if (thread != null && thread.IsAlive)
                 {
-                    thread.Join(100); // Wait 100ms for thread to finish
+                    thread.Join(30);
                 }
             }
         }
@@ -113,7 +117,7 @@ public class ChunkGenerator : MonoBehaviour
             else
             {
                 // If no work, sleep briefly to avoid high CPU usage
-                Thread.Sleep(10);
+                Thread.Sleep(15);
             }
         }
     }

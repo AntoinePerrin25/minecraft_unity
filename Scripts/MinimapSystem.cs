@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using System.Collections.Generic;
 
 public class MinimapSystem : MonoBehaviour
+
 {
     public PlayerController player;
     public ChunkGenerator chunkGenerator;
@@ -25,6 +26,11 @@ public class MinimapSystem : MonoBehaviour
     private Dictionary<Vector2Int, Texture2D> chunkDetailTextures = new Dictionary<Vector2Int, Texture2D>();
     private Dictionary<Vector2Int, Color> chunkTopColors = new Dictionary<Vector2Int, Color>();
     
+    [Header("Performance Settings")]
+    public float updateInterval = 1.5f; // Update every half second instead of every frame
+    private float updateTimer = 0f;
+
+
     private readonly Dictionary<BlockType, Color> blockColors = new Dictionary<BlockType, Color>()
     {
         { BlockType.Air,                    new Color(0.8f, 0.8f, 1.0f)     },      // Light blue for air
@@ -68,10 +74,21 @@ public class MinimapSystem : MonoBehaviour
         }
     }
     
-    void Update()
+    void FixedUpdate()
     {
-        UpdateMinimap();
-        UpdatePlayerIndicator();
+        // Only update the minimap periodically
+        updateTimer += Time.deltaTime;
+        if (updateTimer >= updateInterval)
+        {
+            UpdateMinimap();
+            UpdatePlayerIndicator();
+            updateTimer = 0f;
+        }
+        else
+        {
+            // Just update player position which is cheap
+            UpdatePlayerIndicator();
+        }
     }
     
     void UpdateMinimap()
@@ -294,19 +311,19 @@ public class MinimapSystem : MonoBehaviour
             return null;
             
         int chunkSize = 16; // CHUNK_SIZE_X/Z
-        Texture2D texture = new Texture2D(chunkSize, chunkSize, TextureFormat.RGBA32, false);
+        Texture2D texture = new Texture2D(chunkSize, chunkSize, TextureFormat.RGB24, false);
         
-        // Fill with block colors
+        // Fill all pixels at once instead of one by one
+        Color[] pixels = new Color[chunkSize * chunkSize];
         for (int x = 0; x < chunkSize; x++)
         {
             for (int z = 0; z < chunkSize; z++)
             {
                 BlockType blockType = topBlocks[x, z];
-                Color blockColor = GetBlockColor(blockType);
-                texture.SetPixel(x, z, blockColor);
+                pixels[z * chunkSize + x] = GetBlockColor(blockType);
             }
         }
-        
+        texture.SetPixels(pixels);
         texture.Apply();
         return texture;
     }

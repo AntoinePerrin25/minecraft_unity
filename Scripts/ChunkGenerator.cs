@@ -157,6 +157,15 @@ public class ChunkGenerator : MonoBehaviour
         
         if (chunksToProcess != null)
         {
+            // Sort chunks by smaller distance to player first
+            chunksToProcess.Sort((a, b) => 
+            {
+                float distA = Vector2Int.Distance(a, currentChunk);
+                float distB = Vector2Int.Distance(b, currentChunk);
+                return distA.CompareTo(distB);
+            });
+
+
             foreach (Vector2Int chunkPos in chunksToProcess)
             {
                 if (generatedChunksData.TryRemove(chunkPos, out BlockType[,,] blocks))

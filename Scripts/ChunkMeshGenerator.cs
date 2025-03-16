@@ -25,13 +25,17 @@ public class ChunkMeshGenerator : MonoBehaviour
         blockData = blocks;
         hasBlockData = true;
 
-        List<Vector3> vertices = new List<Vector3>();
-        List<int> triangles = new List<int>();
-        List<Vector2> uvs = new List<Vector2>();
-
         int chunkSizeX = blocks.GetLength(0);
-        int chunkSizeY = blocks.GetLength(1);
+        int chunkSizeY = blocks.GetLength(1); 
         int chunkSizeZ = blocks.GetLength(2);
+        
+        // Préallouer des listes de taille suffisante (évite les redimensionnements)
+        int estimatedBlockCount = chunkSizeX * chunkSizeY * chunkSizeZ / 2; // ~50% de blocs visibles
+        int estimatedVertices = estimatedBlockCount * 4 * 6; // 4 vertices par face, ~6 faces visibles par bloc
+        
+        List<Vector3> vertices = new List<Vector3>(estimatedVertices);
+        List<int> triangles = new List<int>(estimatedVertices / 4 * 6); // 6 indices par face
+        List<Vector2> uvs = new List<Vector2>(estimatedVertices);
 
         // Parcourir tous les blocs
         for (int x = 0; x < chunkSizeX; x++)
@@ -58,10 +62,11 @@ public class ChunkMeshGenerator : MonoBehaviour
         */
 
         Mesh mesh = new Mesh();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support pour plus de vertices
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
         mesh.SetUVs(0, uvs);
-        
+
         mesh.Optimize();
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
